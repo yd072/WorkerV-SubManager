@@ -4,9 +4,9 @@ const PLACEHOLDER_UUID = '00000000-0000-4000-0000-000000000000';
 const WS_PATH = '/api/ws';
 const RANDOM_NODE_COUNT = 10;
 const FILENAME = 'subscription';
-const CF_IPS_CIDR =[ '104.16.0.0/14', '104.21.0.0/16', '104.24.0.0/14', '8.35.211.0/23', '8.39.125.0/24' ];
-const selectableHttpsPorts =["443", "8443", "2053", "2083", "2087", "2096"];
-const selectableHttpPorts =["80", "8080", "8880", "2052", "2082", "2086","2095"];
+const CF_IPS_CIDR = [ '104.16.0.0/14', '104.21.0.0/16', '104.24.0.0/14', '8.35.211.0/23', '8.39.125.0/24' ];
+const selectableHttpsPorts = ["443", "8443", "2053", "2083", "2087", "2096"];
+const selectableHttpPorts = ["80", "8080", "8880", "2052", "2082", "2086","2095"];
 
 async function generateUUIDFromPassword(password) {
     const encoder = new TextEncoder();
@@ -26,15 +26,6 @@ async function generateAdminPath(password) {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     return hashHex.slice(0, 24); 
-}
-
-async function generateSubToken(password) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password + "-sub-token-salt");
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    return hashHex.slice(0, 16); 
 }
 
 async function generateFakeInfo(password) {
@@ -88,9 +79,8 @@ function setupMissingVarsPage() {
             <h1>初始设置</h1>
             <p>请在您的 Cloudflare Worker 设置中添加以下环境变量：</p>
             <ul>
-                <li><strong>PASSWORD</strong>: 一个用于访问管理页面的密码。</li>
+                <li><strong>PASSWORD</strong>: 一个用于访问订阅链接和管理页面的密码。</li>
                 <li><strong>KV (可选)</strong>: 绑定一个 KV 命名空间 (变量名为 <code>KV</code>) 以启用在线优选IP/域名管理功能。</li>
-                <li><strong>RDTOKEN (可选)</strong>: 绑定一个自定义的订阅路径名称，如果不填则自动基于密码安全生成。</li>
             </ul>
             <p>您的用户 UUID 将从此密码自动并确定性地生成。</p>
         </div>
@@ -263,8 +253,8 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
         const { 
             apiUrls = '', 
             apiUrlsWithCustomPorts = '', 
-            selectedHttpsPorts =[], 
-            selectedHttpPorts =[], 
+            selectedHttpsPorts = [], 
+            selectedHttpPorts = [], 
             subConverter = '', 
             subConfig = '',
             customSubDomain = '' 
@@ -709,7 +699,7 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
 
 export default {
     async fetch(request, env) {
-        const { PASSWORD, KV, APIURLS: ENV_APIURLS, RDTOKEN: ENV_RDTOKEN } = env;
+        const { PASSWORD, KV, APIURLS: ENV_APIURLS } = env;
 
         if (!PASSWORD) {
             return setupMissingVarsPage();
@@ -717,7 +707,6 @@ export default {
 
         const AUTH_UUID = await generateUUIDFromPassword(PASSWORD);
         const ADMIN_PATH = await generateAdminPath(PASSWORD);
-        const RDTOKEN = ENV_RDTOKEN || await generateSubToken(PASSWORD);        
         const { fakePassword, fakeHost } = await generateFakeInfo(PASSWORD);
         const url = new URL(request.url);
         
@@ -816,7 +805,7 @@ export default {
             }
             
             if (request.method === 'POST') {
-                 if (!KV) return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `/${RDTOKEN}`, "KV 未绑定", false);
+                 if (!KV) return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `/${PASSWORD}`, "KV 未绑定", false);
                 try {
                     const formData = await request.formData();
                     const formAction = formData.get('form_action');
@@ -836,14 +825,15 @@ export default {
                     targetUrl.searchParams.set('success', 'true');
                     return Response.redirect(targetUrl.toString(), 303);
                 } catch (e) {
-                    return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `/${RDTOKEN}`, e.message, !!KV);
+                    return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `/${PASSWORD}`, e.message, !!KV);
                 }
             }
-            return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `/${RDTOKEN}`, null, !!KV);
+
+            return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `/${PASSWORD}`, null, !!KV);
         }
 
-        if (path === `/${RDTOKEN}`) {
-            const subParams =['clash', 'singbox', 'sb', 'base64', 'sub'];
+        if (path === `/${PASSWORD}`) {
+            const subParams = ['clash', 'singbox', 'sb', 'base64', 'sub'];
             const hasSubParam = subParams.some(p => url.searchParams.has(p));
             
             if (userAgent.includes('mozilla') && !hasSubParam) {
@@ -1082,8 +1072,8 @@ async function fetchExternalSubscription(subDomain, realUuid, realHostName, user
 }
 
 async function fetchPreferredDomains(settings) {
-    const { apiUrls = '', apiUrlsWithCustomPorts = '', selectedHttpsPorts =[], selectedHttpPorts = [] } = settings;
-    const nodesToProcess =[];
+    const { apiUrls = '', apiUrlsWithCustomPorts = '', selectedHttpsPorts = [], selectedHttpPorts = [] } = settings;
+    const nodesToProcess = [];
     if (apiUrls) {
         for (const line of apiUrls.split('\n').map(l => l.trim()).filter(l => l)) {
             if (line.startsWith('http')) {
@@ -1099,7 +1089,7 @@ async function fetchPreferredDomains(settings) {
         }
     }
     if (apiUrlsWithCustomPorts) {
-        let baseServers =[];
+        let baseServers = [];
         const customUrls = apiUrlsWithCustomPorts.split('\n').map(l => l.trim()).filter(l => l);
         
         for (const line of customUrls) {
@@ -1137,11 +1127,11 @@ async function fetchPreferredDomains(settings) {
         return { server, port, name: name || `${server}:${port}`, tls };
     }).filter(Boolean);
 
-    return [...new Map(structuredNodes.map(item =>[`${item.server}:${item.port}`, item])).values()];
+    return [...new Map(structuredNodes.map(item => [`${item.server}:${item.port}`, item])).values()];
 }
 
-function generateRandomCFNodes(hostName, uuid, searchParams, preferredDomains = [], selectedHttpsPorts = [], selectedHttpPorts =[]) {
-    const nodes =[];
+function generateRandomCFNodes(hostName, uuid, searchParams, preferredDomains = [], selectedHttpsPorts = [], selectedHttpPorts = []) {
+    const nodes = [];
     const usePreferred = preferredDomains.length > 0;
     const count = usePreferred ? preferredDomains.length : RANDOM_NODE_COUNT;
 
@@ -1156,11 +1146,11 @@ function generateRandomCFNodes(hostName, uuid, searchParams, preferredDomains = 
             tls = node.tls;
         } else {
             serverAddress = generateRandomIPFromCIDR(CF_IPS_CIDR[Math.floor(Math.random() * CF_IPS_CIDR.length)]);
-            const allSelectedPorts =[
+            const allSelectedPorts = [
                 ...selectedHttpsPorts.map(p => ({ port: p, isTls: true })),
                 ...selectedHttpPorts.map(p => ({ port: p, isTls: false }))
             ];
-            const availablePorts = allSelectedPorts.length > 0 ? allSelectedPorts :[{ port: '443', isTls: true }];
+            const availablePorts = allSelectedPorts.length > 0 ? allSelectedPorts : [{ port: '443', isTls: true }];
             const selectedPortInfo = availablePorts[Math.floor(Math.random() * availablePorts.length)];           
             nodePort = parseInt(selectedPortInfo.port, 10);
             tls = selectedPortInfo.isTls; 
@@ -1216,7 +1206,7 @@ function ipToInt(ip) {
 }
 
 function intToIp(int) {
-    return[ (int >>> 24) & 255, (int >>> 16) & 255, (int >>> 8) & 255, int & 255 ].join('.');
+    return [ (int >>> 24) & 255, (int >>> 16) & 255, (int >>> 8) & 255, int & 255 ].join('.');
 }
 
 function generateRandomIPFromCIDR(cidr) {
