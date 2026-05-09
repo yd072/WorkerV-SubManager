@@ -4,7 +4,7 @@ const PLACEHOLDER_UUID = '00000000-0000-4000-0000-000000000000';
 const WS_PATH = '/api/ws';
 const RANDOM_NODE_COUNT = 10;
 const FILENAME = 'subscription';
-const CF_IPS_CIDR =[ '104.16.0.0/14', '104.21.0.0/16', '104.24.0.0/14', '8.35.211.0/23', '8.39.125.0/24' ];
+const CF_IPS_CIDR =[ '162.159.152.0/23', '104.19.32.0/20', '173.245.58.0/23','172.67.64.0/20', '8.35.211.0/23', '8.39.125.0/24' ];
 const selectableHttpsPorts =["443", "8443", "2053", "2083", "2087", "2096"];
 const selectableHttpPorts =["80", "8080", "8880", "2052", "2082", "2086","2095"];
 
@@ -267,7 +267,8 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
             selectedHttpPorts =[], 
             subConverter = '', 
             subConfig = '',
-            customSubDomain = '' 
+            customSubDomain = '',
+            forwardingAddress = ''
         } = settings;
 
         const httpsPortCheckboxes = selectableHttpsPorts.map(port => `
@@ -282,14 +283,18 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
             </div>`).join('');
 
         advancedSections = `
-            <div class="section">
-                <div class="section-header"><h2 class="section-title">🔄 订阅转换与外部源设置</h2></div>
-                <form method="POST">
-                    <input type="hidden" name="form_action" value="update_sub_settings">
+            <form method="POST">
+                <div class="section">
+                    <div class="section-header"><h2 class="section-title">🔄 订阅转换与外部源设置</h2></div>
                     <div class="modal-input-group">
                         <label for="custom_sub_domain">SUB</label>
                         <input type="text" id="custom_sub_domain" name="custom_sub_domain" value="${customSubDomain || ''}">
                         <small style="color:#666;">如果没有在 URL 参数中指定 ?sub=...，将优先使用此域名获取节点。</small>
+                    </div>
+                    <div class="modal-input-group">
+                        <label for="forwarding_address">转发地址 (proxyip)</label>
+                        <input type="text" id="forwarding_address" name="forwarding_address" value="${forwardingAddress || ''}" placeholder="例如: static.example.com">
+                        <small style="color:#666;">设置后，节点将自动附带 ?proxyip= 参数。</small>
                     </div>
                     <div class="modal-input-group">
                         <label for="sub_converter">订阅转换器地址</label>
@@ -300,24 +305,18 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                         <input type="text" id="sub_config" name="sub_config" value="${subConfig || ''}" placeholder="默认: https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online_Mini_MultiMode.ini">
                     </div>
                     <div class="form-footer"><button type="submit" class="copy-button">保存</button></div>
-                </form>
-            </div>
-            <div class="section">
-                <div class="section-header"><h2 class="section-title">🌐 优选源 (常规)</h2></div>
-                <form method="POST">
-                    <input type="hidden" name="form_action" value="update_api_urls">
+                </div>
+                <div class="section">
+                    <div class="section-header"><h2 class="section-title">🌐 优选源 (常规)</h2></div>
                     <div class="modal-input-group">
                         <label for="api_urls">常规源 (每行一个)</label>
                         <textarea id="api_urls" name="api_urls" rows="4" placeholder="每行一个，可以是 API 链接、优选域名或 IP 地址">${apiUrls}</textarea>
                     </div>
                     <div class="form-footer"><button type="submit" class="copy-button">保存</button></div>
-                </form>
-            </div>
-            <div class="section">
-                <div class="section-header"><h2 class="section-title">端口优选源 (应用选择的端口)</h2></div>
-                <form method="POST">
-                    <input type="hidden" name="form_action" value="update_custom_api_urls">
-                     <div class="modal-input-group">
+                </div>
+                <div class="section">
+                    <div class="section-header"><h2 class="section-title">端口优选源 (应用选择的端口)</h2></div>
+                    <div class="modal-input-group">
                         <label>选择要应用的端口</label>
                         <div class="port-group-title">HTTPS 端口</div>
                         <div class="port-checkbox-group">${httpsPortCheckboxes}</div>
@@ -329,8 +328,8 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                         <textarea id="api_urls_custom_ports" name="api_urls_custom_ports" rows="4" placeholder="在此处输入 IP、域名或 API 链接">${apiUrlsWithCustomPorts}</textarea>
                     </div>
                     <div class="form-footer"><button type="submit" class="copy-button">保存</button></div>
-                </form>
-            </div>`;
+                </div>
+            </form>`;
     }
 
     const html = `
@@ -389,19 +388,6 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                 color: var(--text-color);
                 margin: 0;
             }
-            .header-button {
-                padding: 6px 14px;
-                background: var(--primary-color);
-                color: #fff;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 14px;
-                text-decoration: none;
-            }
-            .header-button:hover {
-                background: var(--secondary-color);
-            }
             .config-info {
                 background: #f8f9fa;
                 padding: 15px;
@@ -433,36 +419,6 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                 gap: 10px;
                 margin-top: 15px;
             }
-            .modal {
-                display: none;
-                position: fixed;
-                z-index: 1000;
-                left: 0;
-                top: 0;
-                width: 100%;
-                height: 100%;
-                overflow: auto;
-                background-color: rgba(0,0,0,0.5);
-            }
-            .modal-content {
-                background-color: var(--section-bg);
-                margin: 5% auto;
-                padding: 25px;
-                border: 1px solid var(--border-color);
-                width: 90%;
-                max-width: 600px;
-                border-radius: 8px;
-                position: relative;
-            }
-            .close-button {
-                color: #aaa;
-                position: absolute;
-                top: 10px;
-                right: 15px;
-                font-size: 28px;
-                font-weight: bold;
-                cursor: pointer;
-            }
             .modal-input-group { margin-bottom: 15px; }
             .modal-input-group label { display: block; margin-bottom: 5px; font-weight: 500; }
             .modal-input-group input[type="text"],
@@ -472,17 +428,6 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                 box-sizing: border-box;
                 border-radius: 4px;
                 border: 1px solid var(--border-color);
-            }
-            .checkbox-label-group {
-                display: flex;
-                align-items: center;
-                gap: 8px;
-                margin-bottom: 8px;
-            }
-            .checkbox-label-group label {
-                margin: 0;
-                cursor: pointer;
-                font-weight: 500;
             }
             .port-group-title { font-weight: bold; margin: 10px 0 5px; }
             .port-checkbox-group {
@@ -533,7 +478,6 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
             <div class="section">
                 <div class="section-header">
                     <h2 class="section-title">🔌 订阅信息</h2>
-                    <button class="header-button" id="customSubButton">自定义参数</button>
                 </div>
                 <div class="subscription-buttons-container">
                     <button class="copy-button" id="generic-sub-button">通用订阅</button>
@@ -547,6 +491,7 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                 <div class="config-info">
                     HOST: ${hostName}<br>
                     UUID: ${uuid}<br>
+                    转发地址: ${settings.forwardingAddress ? settings.forwardingAddress : '默认'}<br>
                     SUB : ${settings.customSubDomain ? settings.customSubDomain : '无'} <br>
                     UA: ${userAgent}
                 </div>
@@ -555,49 +500,14 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
             <div id="toast"></div>
         </div>
 
-        <div id="settingsModal" class="modal">
-            <div class="modal-content">
-                <span class="close-button" id="closeModalButton">&times;</span>
-                <h2>自定义参数</h2>
-                <div class="modal-input-group">
-                    <div class="checkbox-label-group">
-                        <input type="checkbox" id="enableSub">
-                        <label for="enableSub">SUB</label>
-                    </div>
-                    <input type="text" id="subInput">
-                </div>
-                <div class="modal-input-group">
-                    <div class="checkbox-label-group">
-                        <input type="checkbox" id="enableProxyip">
-                        <label for="enableProxyip">ProxyIP</label>
-                    </div>
-                    <input type="text" id="proxyipInput">
-                </div>
-                <div class="form-footer">
-                    <button class="copy-button" id="applySettingsButton">保存</button>
-                </div>
-            </div>
-        </div>
-
         <script>
             document.addEventListener('DOMContentLoaded', () => {
-                const settingsKey = 'subSettings_${uuid}';
-                const modal = document.getElementById('settingsModal');
-                const openModalBtn = document.getElementById('customSubButton');
-                const closeModalBtn = document.getElementById('closeModalButton');
-                const applyBtn = document.getElementById('applySettingsButton');
-                
                 const genericBtn = document.getElementById('generic-sub-button');
                 const base64Btn = document.getElementById('base64-sub-button');
                 const clashBtn = document.getElementById('clash-sub-button');
                 const singboxBtn = document.getElementById('singbox-sub-button');
 
                 const subBaseUrl = "${subPath}"; 
-
-                const settingsMap = {
-                    sub: { enable: document.getElementById('enableSub'), input: document.getElementById('subInput') },
-                    proxyip: { enable: document.getElementById('enableProxyip'), input: document.getElementById('proxyipInput') }
-                };
 
                 function showToast(message) {
                     const toast = document.getElementById("toast");
@@ -614,83 +524,17 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                         .catch(() => showToast('❌ 复制失败'));
                 }
                 
-                function updateSubscriptionLinks() {
-                    const settings = getSettings();
+                function initLinks() {
                     const origin = window.location.origin;
                     const baseUrl = origin + subBaseUrl;
-                    
-                    const params = new URLSearchParams();
-                    let isCustomized = false;
-                    
-                    for (const key in settings) {
-                        if (settings[key].enabled && settings[key].value) {
-                            params.set(key, settings[key].value);
-                            isCustomized = true;
-                        }
-                    }
-                    
-                    const finalUrl = params.toString() ? \`\${baseUrl}?\${params.toString()}\` : baseUrl;
-                    const separator = finalUrl.includes('?') ? '&' : '?';
+                    const separator = baseUrl.includes('?') ? '&' : '?';
 
-                    genericBtn.onclick = () => copyToClipboard(finalUrl);
-                    base64Btn.onclick = () => copyToClipboard(\`\${finalUrl}\${separator}base64\`);
-                    clashBtn.onclick = () => copyToClipboard(\`\${finalUrl}\${separator}clash\`);
-                    singboxBtn.onclick = () => copyToClipboard(\`\${finalUrl}\${separator}sb\`);
-                    
-                    openModalBtn.textContent = isCustomized ? '自定义参数 ✓' : '自定义参数';
+                    genericBtn.onclick = () => copyToClipboard(baseUrl);
+                    base64Btn.onclick = () => copyToClipboard(\`\${baseUrl}\${separator}base64\`);
+                    clashBtn.onclick = () => copyToClipboard(\`\${baseUrl}\${separator}clash\`);
+                    singboxBtn.onclick = () => copyToClipboard(\`\${baseUrl}\${separator}sb\`);
                 }
 
-                function getSettings() {
-                    const currentSettings = {};
-                    for (const key in settingsMap) {
-                        currentSettings[key] = {
-                            enabled: settingsMap[key].enable.checked,
-                            value: settingsMap[key].input.value.trim()
-                        };
-                    }
-                    return currentSettings;
-                }
-
-                function saveSettings() {
-                    localStorage.setItem(settingsKey, JSON.stringify(getSettings()));
-                    showToast('🎉 设置已保存!');
-                }
-
-                function loadSettings() {
-                    try {
-                        const saved = localStorage.getItem(settingsKey);
-                        if (saved) {
-                            const settings = JSON.parse(saved);
-                            for (const key in settings) {
-                                if (settingsMap[key]) {
-                                    settingsMap[key].enable.checked = settings[key].enabled || false;
-                                    settingsMap[key].input.value = settings[key].value || '';
-                                    settingsMap[key].input.disabled = !settings[key].enabled;
-                                }
-                            }
-                        }
-                    } catch (e) {
-                        console.error("加载设置失败", e);
-                    }
-                    updateSubscriptionLinks();
-                }
-
-                for (const key in settingsMap) {
-                    settingsMap[key].enable.addEventListener('change', (e) => {
-                        settingsMap[key].input.disabled = !e.target.checked;
-                    });
-                }
-                
-                openModalBtn.onclick = () => { modal.style.display = 'block'; };
-                closeModalBtn.onclick = () => { modal.style.display = 'none'; };
-                window.onclick = (e) => { if (e.target == modal) { modal.style.display = 'none'; } };
-
-                applyBtn.onclick = () => {
-                    saveSettings();
-                    updateSubscriptionLinks();
-                    modal.style.display = 'none';
-                };
-                
                 const urlParams = new URLSearchParams(window.location.search);
                 if (urlParams.has('success')) {
                     showToast('🎉 设置已成功更新！');
@@ -698,14 +542,13 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                     history.replaceState({}, document.title, newUrl);
                 }
                 
-                loadSettings();
+                initLinks();
             });
         </script>
     </body>
     </html>`;
     return new Response(html, { headers: { "Content-Type": "text/html;charset=utf-8" } });
 }
-
 
 export default {
     async fetch(request, env) {
@@ -743,11 +586,11 @@ export default {
             
             const subDomain = url.searchParams.get('sub') || settings.customSubDomain;
             if (subDomain) {
-                return await fetchExternalSubscription(subDomain, AUTH_UUID, url.hostname, userAgent, url.searchParams);
+                return await fetchExternalSubscription(subDomain, AUTH_UUID, url.hostname, userAgent, url.searchParams, settings.forwardingAddress);
             }
 
             const preferredDomains = await fetchPreferredDomains(settings);
-            const randomNodes = generateRandomCFNodes(fakeHost, AUTH_UUID, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts);
+            const randomNodes = generateRandomCFNodes(fakeHost, AUTH_UUID, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts, settings.forwardingAddress);
             const subContent = generateClientConfig(randomNodes);
             return new Response(btoa(subContent), { headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
         }
@@ -819,18 +662,17 @@ export default {
                  if (!KV) return subscriptionManagementPage(request, PASSWORD, AUTH_UUID, settings, `/${RDTOKEN}`, "KV 未绑定", false);
                 try {
                     const formData = await request.formData();
-                    const formAction = formData.get('form_action');
-                    if (formAction === 'update_api_urls') {
-                        settings.apiUrls = formData.get('api_urls');
-                    } else if (formAction === 'update_custom_api_urls') {
-                        settings.apiUrlsWithCustomPorts = formData.get('api_urls_custom_ports');
-                        settings.selectedHttpsPorts = formData.getAll('selected_https_ports');
-                        settings.selectedHttpPorts = formData.getAll('selected_http_ports');
-                    } else if (formAction === 'update_sub_settings') {
-                        settings.subConverter = formData.get('sub_converter');
-                        settings.subConfig = formData.get('sub_config');
-                        settings.customSubDomain = formData.get('custom_sub_domain').trim(); // Save Custom SUB Domain
-                    }
+                    settings = {
+                        apiUrls: formData.get('api_urls'),
+                        apiUrlsWithCustomPorts: formData.get('api_urls_custom_ports'),
+                        selectedHttpsPorts: formData.getAll('selected_https_ports'),
+                        selectedHttpPorts: formData.getAll('selected_http_ports'),
+                        subConverter: formData.get('sub_converter'),
+                        subConfig: formData.get('sub_config'),
+                        customSubDomain: formData.get('custom_sub_domain')?.trim(),
+                        forwardingAddress: formData.get('forwarding_address')?.trim()
+                    };
+                    
                     await KV.put('settings', JSON.stringify(settings));
                     const targetUrl = new URL(`/${ADMIN_PATH}`, url); 
                     targetUrl.searchParams.set('success', 'true');
@@ -897,11 +739,11 @@ export default {
             
             const subDomain = url.searchParams.get('sub') || settings.customSubDomain;
             if (subDomain) {
-                return await fetchExternalSubscription(subDomain, AUTH_UUID, url.hostname, userAgent, url.searchParams);
+                return await fetchExternalSubscription(subDomain, AUTH_UUID, url.hostname, userAgent, url.searchParams, settings.forwardingAddress);
             }
 
             const preferredDomains = await fetchPreferredDomains(settings);
-            const randomNodes = generateRandomCFNodes(url.hostname, AUTH_UUID, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts);
+            const randomNodes = generateRandomCFNodes(url.hostname, AUTH_UUID, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts, settings.forwardingAddress);
             const subContent = generateClientConfig(randomNodes);
             const subFilename = `${FILENAME}.txt`;
             const finalHeaders = new Headers();
@@ -1022,7 +864,7 @@ async function parseProxyIP(proxyIPString) {
     return [address, port];
 }
 
-async function fetchExternalSubscription(subDomain, realUuid, realHostName, userAgent, searchParams) {
+async function fetchExternalSubscription(subDomain, realUuid, realHostName, userAgent, searchParams, forwardingAddress) {
     const subUrl = `https://${subDomain}/sub?host=${PLACEHOLDER_HOST}&uuid=${PLACEHOLDER_UUID}&path=${encodeURIComponent('/')}`;
 
     try {
@@ -1039,7 +881,7 @@ async function fetchExternalSubscription(subDomain, realUuid, realHostName, user
             let restoredContent = decodedContent.replace(new RegExp(PLACEHOLDER_HOST, 'g'), realHostName)
                                                 .replace(new RegExp(PLACEHOLDER_UUID, 'g'), realUuid);
 
-            const proxyIP = searchParams.get('proxyip');
+            const proxyIP = searchParams.get('proxyip') || forwardingAddress;
             if (proxyIP) {
                 const links = restoredContent.split('\n');
                 const modifiedLinks = links.map(link => {
@@ -1140,7 +982,7 @@ async function fetchPreferredDomains(settings) {
     return [...new Map(structuredNodes.map(item =>[`${item.server}:${item.port}`, item])).values()];
 }
 
-function generateRandomCFNodes(hostName, uuid, searchParams, preferredDomains = [], selectedHttpsPorts = [], selectedHttpPorts =[]) {
+function generateRandomCFNodes(hostName, uuid, searchParams, preferredDomains = [], selectedHttpsPorts = [], selectedHttpPorts =[], forwardingAddress) {
     const nodes =[];
     const usePreferred = preferredDomains.length > 0;
     const count = usePreferred ? preferredDomains.length : RANDOM_NODE_COUNT;
@@ -1168,8 +1010,9 @@ function generateRandomCFNodes(hostName, uuid, searchParams, preferredDomains = 
         }
 
         let path = WS_PATH;
-        if (searchParams.has('proxyip')) {
-            path += `?proxyip=${encodeURIComponent(searchParams.get('proxyip'))}`;
+        const proxyIP = searchParams.get('proxyip') || forwardingAddress;
+        if (proxyIP) {
+            path += `?proxyip=${encodeURIComponent(proxyIP)}`;
         }
         
         nodes.push({
