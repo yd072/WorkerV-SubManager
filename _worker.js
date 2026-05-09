@@ -293,8 +293,8 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                     </div>
                     <div class="modal-input-group">
                         <label for="forwarding_address">转发地址 (proxyip)</label>
-                        <input type="text" id="forwarding_address" name="forwarding_address" value="${forwardingAddress || ''}" placeholder="例如: static.example.com">
-                        <small style="color:#666;">设置后，节点将自动附带 ?proxyip= 参数。</small>
+                        <input type="text" id="forwarding_address" name="forwarding_address" value="${forwardingAddress || ''}" placeholder="例如: ip1.com, ip2.com">
+                        <small style="color:#666;">支持多个地址，用逗号或换行分隔。将按顺序尝试连接。</small>
                     </div>
                     <div class="modal-input-group">
                         <label for="sub_converter">订阅转换器地址</label>
@@ -566,8 +566,7 @@ export default {
         
         const upgradeHeader = request.headers.get('Upgrade');
         if (upgradeHeader && upgradeHeader.toLowerCase() === 'websocket') {
-            const proxyIP = getProxyIPFromRequest(request);
-            return await handleWebSocketConnection(request, AUTH_UUID, proxyIP);
+            return await handleWebSocketConnection(request, AUTH_UUID, env);
         }
 
         const path = url.pathname;
@@ -757,7 +756,7 @@ export default {
     },
 };
 
-async function handleWebSocketConnection(request, AUTH_UUID, proxyIP) {
+async function handleWebSocketConnection(request, AUTH_UUID, env) {
     const webSocketPair = new WebSocketPair();
     const [client, server] = Object.values(webSocketPair);
     server.accept();
@@ -765,6 +764,14 @@ async function handleWebSocketConnection(request, AUTH_UUID, proxyIP) {
     let remoteSocketWrapper = { value: null };
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
     const readableWebSocketStream = makeReadableWebSocketStream(server, earlyDataHeader);
+
+    let settings = {};
+    if (env.KV) {
+        try {
+            settings = await env.KV.get("settings", "json") || {};
+        } catch (e) {}
+    }
+    const proxyIPs = getProxyIPsFromRequest(request, settings);
 
     readableWebSocketStream.pipeTo(new WritableStream({
         async write(chunk) {
@@ -802,31 +809,38 @@ async function handleWebSocketConnection(request, AUTH_UUID, proxyIP) {
             const payload = chunk.slice(pos);
             const responseHeader = new Uint8Array([chunk[0], 0]);
             
-            await handleTCPOutBound(remoteSocketWrapper, addressRemote, port, payload, server, responseHeader, proxyIP);
+            await handleTCPOutBound(remoteSocketWrapper, addressRemote, port, payload, server, responseHeader, proxyIPs);
         },
     })).catch(() => {});
 
     return new Response(null, { status: 101, webSocket: client });
 }
 
-async function handleTCPOutBound(remoteSocket, addressRemote, portRemote, rawClientData, webSocket, responseHeader, proxyIP) {
+async function handleTCPOutBound(remoteSocket, addressRemote, portRemote, rawClientData, webSocket, responseHeader, proxyIPs) {
     const connectWith = async (hostname, port) => {
         const socket = connect({ hostname, port });
         await socket.opened;
         return socket;
     };
     
-    let tcpSocket;
+    let tcpSocket = null;   
     try {
         tcpSocket = await connectWith(addressRemote, portRemote);
     } catch (err) {
-        try {
-            const [proxyAddress, proxyPort] = await parseProxyIP(proxyIP);
-            tcpSocket = await connectWith(proxyAddress, proxyPort);
-        } catch (proxyErr) {
-            safeCloseWebSocket(webSocket, 1011, 'All connection attempts failed');
-            return;
+        for (const proxyIP of proxyIPs) {
+            try {
+                const [proxyAddress, proxyPort] = await parseProxyIP(proxyIP);
+                tcpSocket = await connectWith(proxyAddress, proxyPort);
+                if (tcpSocket) break;
+            } catch (proxyErr) {
+                continue;
+            }
         }
+    }
+
+    if (!tcpSocket) {
+        safeCloseWebSocket(webSocket, 1011, 'All connection attempts failed');
+        return;
     }
 
     remoteSocket.value = tcpSocket;
@@ -836,13 +850,14 @@ async function handleTCPOutBound(remoteSocket, addressRemote, portRemote, rawCli
     remoteSocketToWS(tcpSocket, webSocket, responseHeader);
 }
 
-function getProxyIPFromRequest(request) {
+function getProxyIPsFromRequest(request, settings) {
     const url = new URL(request.url);
-    const { searchParams } = url;
-    if (searchParams.has('proxyip')) {
-        return searchParams.get('proxyip');
+    let proxyStr = url.searchParams.get('proxyip') || settings.forwardingAddress || "";
+    
+    if (!proxyStr) {
+        return [request.cf.colo + '.PrOxYIp.CmLiUsSsS.nEt'];
     }
-    return (request.cf.colo + '.PrOxYIp.CmLiUsSsS.nEt');
+    return proxyStr.split(/[\n, ]+/).map(ip => ip.trim()).filter(ip => ip !== "");
 }
 
 
