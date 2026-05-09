@@ -684,7 +684,7 @@ export default {
         }
 
         if (path === `/${RDTOKEN}`) {
-            const subParams =['clash', 'singbox', 'sb', 'base64', 'sub'];
+            const subParams =['clash', 'singbox', 'sb', 'base64', 'sub', 'proxyip'];
             const hasSubParam = subParams.some(p => url.searchParams.has(p));
             
             if (userAgent.includes('mozilla') && !hasSubParam) {
@@ -721,9 +721,26 @@ export default {
                 try {
                     const subResponse = await fetch(converterUrl, { headers: { 'User-Agent': 'cloudflare-worker' } });
                     if (!subResponse.ok) return new Response(subResponse.statusText, { status: subResponse.status });
-                    const convertedText = await subResponse.text();
-                    const restoredText = convertedText.replaceAll(fakeHost, url.hostname);
-                    
+                    let restoredText = await subResponse.text();
+                    restoredText = restoredText.replaceAll(fakeHost, url.hostname);
+                    const proxyIP = url.searchParams.get('proxyip') || settings.forwardingAddress;
+                    if (proxyIP) {
+                        const pathRegex = /((?:path|ws-path|ws_path)["']?\s*[:=]\s*["']?)([^"'\n\r,}]+)(["']?)/gi;
+                        restoredText = restoredText.replace(pathRegex, (match, prefix, pathValue, suffix) => {
+                            try {
+                                const dummyBase = 'http://dummy.com';
+                                let fullUrl;
+                                try { fullUrl = new URL(pathValue); }
+                                catch { fullUrl = new URL(pathValue, dummyBase); }
+                                const cleanPath = fullUrl.pathname; 
+                                const newPath = (pathValue.startsWith('http') || pathValue.startsWith('ws'))
+                                    ? `${fullUrl.origin}${cleanPath}?proxyip=${proxyIP.replaceAll('%3A', ':')}`
+                                    : `${cleanPath}?proxyip=${proxyIP.replaceAll('%3A', ':')}`;
+                                return `${prefix}${newPath}${suffix}`;
+                            } catch (e) { return match; }
+                        });
+                    }
+
                     const subFilename = `${FILENAME}.yaml`;
                     const finalHeaders = new Headers();
                     finalHeaders.set('Content-Type', 'text/plain;charset=utf-8');
@@ -761,17 +778,15 @@ async function handleWebSocketConnection(request, AUTH_UUID, env) {
     const [client, server] = Object.values(webSocketPair);
     server.accept();
 
+    let settings = {};
+    if (env.KV) {
+        try { settings = await env.KV.get("settings", "json") || {}; } catch (e) {}
+    }
+    const proxyIPs = getProxyIPsFromRequest(request, settings);
+
     let remoteSocketWrapper = { value: null };
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
     const readableWebSocketStream = makeReadableWebSocketStream(server, earlyDataHeader);
-
-    let settings = {};
-    if (env.KV) {
-        try {
-            settings = await env.KV.get("settings", "json") || {};
-        } catch (e) {}
-    }
-    const proxyIPs = getProxyIPsFromRequest(request, settings);
 
     readableWebSocketStream.pipeTo(new WritableStream({
         async write(chunk) {
@@ -823,7 +838,7 @@ async function handleTCPOutBound(remoteSocket, addressRemote, portRemote, rawCli
         return socket;
     };
     
-    let tcpSocket = null;   
+    let tcpSocket = null;
     try {
         tcpSocket = await connectWith(addressRemote, portRemote);
     } catch (err) {
@@ -853,10 +868,7 @@ async function handleTCPOutBound(remoteSocket, addressRemote, portRemote, rawCli
 function getProxyIPsFromRequest(request, settings) {
     const url = new URL(request.url);
     let proxyStr = url.searchParams.get('proxyip') || settings.forwardingAddress || "";
-    
-    if (!proxyStr) {
-        return [request.cf.colo + '.PrOxYIp.CmLiUsSsS.nEt'];
-    }
+    if (!proxyStr) return [request.cf.colo + '.PrOxYIp.CmLiUsSsS.nEt'];
     return proxyStr.split(/[\n, ]+/).map(ip => ip.trim()).filter(ip => ip !== "");
 }
 
@@ -900,13 +912,13 @@ async function fetchExternalSubscription(subDomain, realUuid, realHostName, user
             if (proxyIP) {
                 const links = restoredContent.split('\n');
                 const modifiedLinks = links.map(link => {
-                    if (!link.trim()) return link;
+                    const protocolHead = '\x76\x6c\x65\x73\x73';
+                    if (!link.trim() || !link.startsWith(protocolHead + '://')) return link;
                     try {
                         const nodeUrl = new URL(link);
-                        const wsPath = nodeUrl.searchParams.get('path') || '/';
-                        const pathUrl = new URL(wsPath, 'https://dummy.com');
-                        pathUrl.searchParams.set('proxyip', proxyIP);
-                        nodeUrl.searchParams.set('path', `${pathUrl.pathname}${pathUrl.search}`);
+                        let wsPath = nodeUrl.searchParams.get('path') || '/';
+                        const cleanPath = wsPath.split('?')[0];
+                        nodeUrl.searchParams.set('path', `${cleanPath}?proxyip=${proxyIP.replaceAll('%3A', ':')}`);
                         return nodeUrl.toString();
                     } catch {
                         return link; 
@@ -1048,7 +1060,7 @@ function generateRandomCFNodes(hostName, uuid, searchParams, preferredDomains = 
 }
 
 function generateClientConfig(nodeObjects) {
-    const protocol = 'vl' + 'ess';
+    const protocol = '\x76\x6c\x65\x73\x73'; 
     const fpOptions = ['chrome', 'random']; 
 
     return nodeObjects.map(node => {
@@ -1140,9 +1152,7 @@ function safeCloseWebSocket(socket, code, reason) {
         if (socket.readyState === 1 || socket.readyState === 2) { 
             socket.close(code, reason);
         }
-    } catch (error) {
-
-    }
+    } catch (error) {}
 }
 
 function base64ToArrayBuffer(base64Str) {
