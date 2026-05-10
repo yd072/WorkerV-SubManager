@@ -589,8 +589,6 @@ export default {
             if (subDomain) {
                 return await fetchExternalSubscription(subDomain, AUTH_UUID, url.hostname, userAgent, url.searchParams, settings.forwardingAddress);
             }
-
-            // --- 核心修改：如果是脱敏模式，输出 Placeholder ---
             const activeUuid = isPlaceholderMode ? PLACEHOLDER_UUID : AUTH_UUID;
             const activeHost = isPlaceholderMode ? PLACEHOLDER_HOST : fakeHost;
 
