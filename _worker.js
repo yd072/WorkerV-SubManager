@@ -1,3 +1,4 @@
+
 import { connect } from "cloudflare:sockets";
 const PLACEHOLDER_HOST = 'example.com';
 const PLACEHOLDER_UUID = '00000000-0000-4000-0000-000000000000';
@@ -573,6 +574,7 @@ export default {
         const userAgent = (request.headers.get('User-Agent') || '').toLowerCase();
 
         if (path === `/${fakePassword}`) {
+            const isPlaceholderMode = url.searchParams.get('p') === '1'; 
             let settings = {};
             if (KV) {
                 try {
@@ -588,8 +590,12 @@ export default {
                 return await fetchExternalSubscription(subDomain, AUTH_UUID, url.hostname, userAgent, url.searchParams, settings.forwardingAddress);
             }
 
+            // --- 核心修改：如果是脱敏模式，输出 Placeholder ---
+            const activeUuid = isPlaceholderMode ? PLACEHOLDER_UUID : AUTH_UUID;
+            const activeHost = isPlaceholderMode ? PLACEHOLDER_HOST : fakeHost;
+
             const preferredDomains = await fetchPreferredDomains(settings);
-            const randomNodes = generateRandomCFNodes(fakeHost, AUTH_UUID, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts, settings.forwardingAddress);
+            const randomNodes = generateRandomCFNodes(activeHost, activeUuid, url.searchParams, preferredDomains, settings.selectedHttpsPorts, settings.selectedHttpPorts, settings.forwardingAddress);
             const subContent = generateClientConfig(randomNodes);
             return new Response(btoa(subContent), { headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
         }
@@ -715,6 +721,7 @@ export default {
                 sourceSubUrl.searchParams.delete('singbox');
                 sourceSubUrl.searchParams.delete('sb');
                 sourceSubUrl.pathname = `/${fakePassword}`; 
+                sourceSubUrl.searchParams.set('p', '1');
 
                 const converterUrl = `https://${subConverterHost}/sub?target=${targetClient}&url=${encodeURIComponent(sourceSubUrl.toString())}&insert=false&config=${encodeURIComponent(subConfig)}&emoji=true&list=false&tfo=false&scv=true&fdn=false&sort=false&new_name=true`;
 
@@ -722,7 +729,9 @@ export default {
                     const subResponse = await fetch(converterUrl, { headers: { 'User-Agent': 'cloudflare-worker' } });
                     if (!subResponse.ok) return new Response(subResponse.statusText, { status: subResponse.status });
                     let restoredText = await subResponse.text();
-                    restoredText = restoredText.replaceAll(fakeHost, url.hostname);
+                    restoredText = restoredText.replaceAll(PLACEHOLDER_UUID, AUTH_UUID);
+                    restoredText = restoredText.replaceAll(PLACEHOLDER_HOST, url.hostname);
+
                     const proxyIP = url.searchParams.get('proxyip') || settings.forwardingAddress;
                     if (proxyIP) {
                         const pathRegex = /((?:path|ws-path|ws_path)["']?\s*[:=]\s*["']?)([^"'\n\r,}]+)(["']?)/gi;
