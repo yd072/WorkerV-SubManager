@@ -1,4 +1,3 @@
-
 import { connect } from "cloudflare:sockets";
 const PLACEHOLDER_HOST = 'example.com';
 const PLACEHOLDER_UUID = '00000000-0000-4000-0000-000000000000';
@@ -349,6 +348,7 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                 --background-color: #f5f5f5;
                 --section-bg: #ffffff;
                 --error-color: #dc3545;
+                --qr-color: #6f42c1;
             }
             body {
                 margin: 0;
@@ -413,11 +413,32 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
             .copy-button:hover:not(:disabled) {
                 background: var(--secondary-color);
             }
+            .qr-btn {
+                background: var(--qr-color) !important;
+                color: white !important;
+                padding: 4px 8px;
+                font-size: 12px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                width: 80%;
+                margin-top: 5px;
+                transition: opacity 0.2s;
+            }
+            .qr-btn:hover {
+                opacity: 0.9;
+            }
+            .btn-group-item {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                width: 110px;
+            }
             .subscription-buttons-container {
                 display: flex;
                 flex-wrap: wrap;
                 justify-content: center;
-                gap: 10px;
+                gap: 15px;
                 margin-top: 15px;
             }
             .modal-input-group { margin-bottom: 15px; }
@@ -471,7 +492,13 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                 text-align: center;
                 font-weight: 600;
             }
+            #qrModal { display: none; position: fixed; z-index: 10001; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); align-items: center; justify-content: center; }
+            .qr-content { background: white; padding: 20px; border-radius: 12px; text-align: center; max-width: 90%; }
+            #qrcode { margin: 15px auto; padding: 10px; background: white; width: 200px; height: 200px; display: flex; justify-content: center; align-items: center; }
+            .qr-url { font-size: 11px; color: #666; word-break: break-all; margin-top: 10px; background: #f0f0f0; padding: 8px; border-radius: 4px; max-height: 80px; overflow-y: auto; text-align: left; }
+            .close-qr { margin-top: 15px; padding: 8px 20px; background: #333; color: white; border: none; border-radius: 6px; cursor: pointer; }
         </style>
+        <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     </head>
     <body>
         <div class="container">
@@ -481,10 +508,22 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                     <h2 class="section-title">🔌 订阅信息</h2>
                 </div>
                 <div class="subscription-buttons-container">
-                    <button class="copy-button" id="generic-sub-button">通用订阅</button>
-                    <button class="copy-button" id="base64-sub-button">Base64</button>
-                    <button class="copy-button" id="clash-sub-button">Clash </button>
-                    <button class="copy-button" id="singbox-sub-button">SingBox</button>
+                    <div class="btn-group-item">
+                        <button class="copy-button" id="btn-gen">通用订阅</button>
+                        <button class="qr-btn" onclick="showQRCode('')">扫码</button>
+                    </div>
+                    <div class="btn-group-item">
+                        <button class="copy-button" id="btn-b64">Base64</button>
+                        <button class="qr-btn" onclick="showQRCode('base64')">扫码</button>
+                    </div>
+                    <div class="btn-group-item">
+                        <button class="copy-button" id="btn-clash">Clash</button>
+                        <button class="qr-btn" onclick="showQRCode('clash')">扫码</button>
+                    </div>
+                    <div class="btn-group-item">
+                        <button class="copy-button" id="btn-sb">SingBox</button>
+                        <button class="qr-btn" onclick="showQRCode('sb')">扫码</button>
+                    </div>
                 </div>
             </div>
              <div class="section">
@@ -501,16 +540,20 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
             <div id="toast"></div>
         </div>
 
+        <div id="qrModal" onclick="this.style.display='none'">
+            <div class="qr-content" onclick="event.stopPropagation()">
+                <h3 id="qrTitle" style="margin:0; font-size:16px;">扫描订阅</h3>
+                <div id="qrcode"></div>
+                <div id="qrUrlDisplay" class="qr-url"></div>
+                <button class="close-qr" onclick="document.getElementById('qrModal').style.display='none'">关闭</button>
+            </div>
+        </div>
+
         <script>
             document.addEventListener('DOMContentLoaded', () => {
-                const genericBtn = document.getElementById('generic-sub-button');
-                const base64Btn = document.getElementById('base64-sub-button');
-                const clashBtn = document.getElementById('clash-sub-button');
-                const singboxBtn = document.getElementById('singbox-sub-button');
-
                 const subBaseUrl = "${subPath}"; 
 
-                function showToast(message) {
+                window.showToast = function(message) {
                     const toast = document.getElementById("toast");
                     toast.textContent = message;
                     toast.className = "show";
@@ -519,22 +562,36 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                     }, 3000);
                 }
 
+                function getFullUrl(type) {
+                    const origin = window.location.origin;
+                    const baseUrl = origin + subBaseUrl;
+                    const separator = baseUrl.includes('?') ? '&' : '?';
+                    if (!type) return baseUrl;
+                    return baseUrl + separator + (type === 'sb' ? 'sb' : type);
+                }
+
                 function copyToClipboard(text) {
                     navigator.clipboard.writeText(text)
                         .then(() => showToast('✅ 已复制到剪贴板'))
                         .catch(() => showToast('❌ 复制失败'));
                 }
                 
-                function initLinks() {
-                    const origin = window.location.origin;
-                    const baseUrl = origin + subBaseUrl;
-                    const separator = baseUrl.includes('?') ? '&' : '?';
-
-                    genericBtn.onclick = () => copyToClipboard(baseUrl);
-                    base64Btn.onclick = () => copyToClipboard(\`\${baseUrl}\${separator}base64\`);
-                    clashBtn.onclick = () => copyToClipboard(\`\${baseUrl}\${separator}clash\`);
-                    singboxBtn.onclick = () => copyToClipboard(\`\${baseUrl}\${separator}sb\`);
+                window.showQRCode = function(type) {
+                    const url = getFullUrl(type);
+                    document.getElementById('qrcode').innerHTML = '';
+                    document.getElementById('qrUrlDisplay').textContent = url;
+                    document.getElementById('qrModal').style.display = 'flex';
+                    new QRCode(document.getElementById('qrcode'), {
+                        text: url,
+                        width: 200,
+                        height: 200
+                    });
                 }
+
+                document.getElementById('btn-gen').onclick = () => copyToClipboard(getFullUrl(''));
+                document.getElementById('btn-b64').onclick = () => copyToClipboard(getFullUrl('base64'));
+                document.getElementById('btn-clash').onclick = () => copyToClipboard(getFullUrl('clash'));
+                document.getElementById('btn-sb').onclick = () => copyToClipboard(getFullUrl('sb'));
 
                 const urlParams = new URLSearchParams(window.location.search);
                 if (urlParams.has('success')) {
@@ -542,8 +599,6 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
                     const newUrl = window.location.pathname;
                     history.replaceState({}, document.title, newUrl);
                 }
-                
-                initLinks();
             });
         </script>
     </body>
