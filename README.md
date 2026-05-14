@@ -1,7 +1,7 @@
 # 项目
 这是在[cmliu edgetunnel](https://github.com/cmliu/edgetunnel)基础上进行修改，简化代码
-## 使用说明
-设置`PASSWORD`变量，变量值为您的密码，进入页面找到页面下方的`Admin Login`点击进入登录页面输入密码。
+## 如何访问管理后台
+设置`PASSWORD`变量，变量值为您的密码，进入页面找到页面下方的`Admin Login`点击进入登录页面输入密码（`PASSWORD`）。
 
 可绑定KV，变量名称为`KV`
 
