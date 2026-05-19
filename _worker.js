@@ -838,6 +838,7 @@ export default {
 async function handleWebSocketConnection(request, AUTH_UUID, env) {
     const webSocketPair = new WebSocketPair();
     const [client, server] = Object.values(webSocketPair);
+    server.binaryType = 'arraybuffer';
     server.accept();
 
     let settings = {};
@@ -1181,9 +1182,16 @@ function makeReadableWebSocketStream(webSocket, earlyDataHeader) {
     let readableStreamCancel = false;
     const stream = new ReadableStream({
         start(controller) {
-            webSocket.addEventListener('message', (event) => {
-                if (!readableStreamCancel) {
-                    controller.enqueue(event.data);
+            webSocket.addEventListener('message', async (event) => {
+                if (readableStreamCancel) return;
+                try {
+                    let data = event.data;
+                    if (data instanceof Blob) {
+                        data = await data.arrayBuffer();
+                    }
+                    controller.enqueue(data);
+                } catch (e) {
+                    controller.error(e);
                 }
             });
             webSocket.addEventListener('close', () => {
