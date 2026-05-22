@@ -498,7 +498,7 @@ function subscriptionManagementPage(request, password, uuid, settings, subPath, 
             .qr-url { font-size: 11px; color: #666; word-break: break-all; margin-top: 10px; background: #f0f0f0; padding: 8px; border-radius: 4px; max-height: 80px; overflow-y: auto; text-align: left; }
             .close-qr { margin-top: 15px; padding: 8px 20px; background: #333; color: white; border: none; border-radius: 6px; cursor: pointer; }
         </style>
-        <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/gh/yd072/assets/qrcode.min.js"></script>
     </head>
     <body>
         <div class="container">
