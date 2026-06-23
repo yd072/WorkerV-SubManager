@@ -4,7 +4,7 @@ const PLACEHOLDER_UUID = '00000000-0000-4000-0000-000000000000';
 const WS_PATH = '/api/ws';
 const RANDOM_NODE_COUNT = 10;
 const FILENAME = 'subscription';
-const CF_IPS_CIDR =[ '162.159.19.0/24', '162.159.10.0/24', '104.19.150.0/24','172.67.64.0/24', '8.35.211.0/23', '8.39.125.0/24' ];
+const CF_IPS_CIDR =[ '162.159.39.0/24', '104.19.150.0/24','172.64.229.0/24', '8.35.211.0/23', '8.39.125.0/24' ];
 const selectableHttpsPorts =["443", "8443", "2053", "2083", "2087", "2096"];
 const selectableHttpPorts =["80", "8080", "8880", "2052", "2082", "2086","2095"];
 
